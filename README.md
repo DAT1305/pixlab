@@ -16,6 +16,12 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/DAT1305/pixlab/releases/latest">
+    <img alt="Download latest release" src="https://img.shields.io/badge/Download-latest%20release-f0b35a?style=for-the-badge" />
+  </a>
+</p>
+
+<p align="center">
   <img src="./Screenshot%202026-04-30%20at%2005.52.00.png" alt="PixLab Desktop screenshot" />
 </p>
 
