@@ -50,6 +50,10 @@ jobs:
       - name: Build release
         run: ${{ matrix.command }}
 
+      - name: Repackage macOS app with ad-hoc signature
+        if: matrix.name == 'macOS'
+        run: npm run package:mac-ad-hoc
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

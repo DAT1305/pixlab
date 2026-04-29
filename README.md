@@ -65,6 +65,12 @@ npm run build:windows  # Windows installer, run on Windows
 
 Prebuilt macOS and Windows packages are available from this repository's Releases page when published.
 
+macOS note: the public build is ad-hoc signed but not Apple-notarized yet. If Gatekeeper blocks it after copying to Applications, run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/PixLab Desktop.app"
+```
+
 <a id="tieng-viet"></a>
 
 ## Tiếng Việt
@@ -99,6 +105,12 @@ npm run build:windows  # tạo installer Windows trên Windows
 
 Bản cài đặt macOS và Windows sẽ nằm trong mục Releases của repo khi phát hành.
 
+Lưu ý macOS: bản public hiện ký ad-hoc, chưa notarize bằng Apple Developer ID. Nếu Gatekeeper chặn sau khi copy vào Applications, chạy:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/PixLab Desktop.app"
+```
+
 <a id="zh"></a>
 
 ## 中文
@@ -132,6 +144,12 @@ npm run build:windows  # 在 Windows 上生成安装包
 ```
 
 发布后，可在本仓库的 Releases 页面下载 macOS 和 Windows 安装包。
+
+macOS 说明：公开版本目前使用 ad-hoc 签名，尚未通过 Apple notarization。如果复制到 Applications 后仍被 Gatekeeper 阻止，请运行：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/PixLab Desktop.app"
+```
 
 <p align="center">
   <a href="https://buymeacoffee.com/Dat1305">

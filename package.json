@@ -1,6 +1,6 @@
 {
   "name": "pixlab-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A local-first desktop studio for pixel art conversion, sprite cleanup, and GIF export.",
   "license": "MIT",
   "author": "Nguyen",
@@ -19,6 +19,7 @@
     "build": "tauri build --config src-tauri/tauri.standalone.conf.json --ci --no-sign",
     "build:mac": "tauri build --config src-tauri/tauri.standalone.conf.json --ci --no-sign --bundles app,dmg",
     "build:windows": "tauri build --config src-tauri/tauri.standalone.conf.json --ci --no-sign",
+    "package:mac-ad-hoc": "bash ./scripts/package-macos-ad-hoc.sh",
     "prepare:frontend": "node ./scripts/prepare-local-frontend.mjs"
   },
   "devDependencies": {

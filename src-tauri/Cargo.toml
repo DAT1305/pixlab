@@ -1,6 +1,6 @@
 [package]
 name = "pixlab_desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local-only desktop app for PixLab"
 authors = ["Nguyen"]
 license = "MIT"
