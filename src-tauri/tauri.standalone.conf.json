@@ -1,0 +1,7 @@
+{
+  "build": {
+    "beforeBuildCommand": "",
+    "frontendDist": "../dist-desktop"
+  }
+}
+

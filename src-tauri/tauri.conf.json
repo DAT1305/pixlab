@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PixLab Desktop",
+  "version": "0.1.0",
+  "identifier": "com.mafiler.pixlab.desktop",
+  "build": {
+    "beforeDevCommand": "npm --prefix .. run dev -- --host 127.0.0.1 --port 4174",
+    "devUrl": "http://127.0.0.1:4174",
+    "beforeBuildCommand": "npm --prefix .. run build && npm --prefix . run prepare:frontend",
+    "frontendDist": "../dist-desktop"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "PixLab Desktop",
+        "width": 1440,
+        "height": 920,
+        "minWidth": 1100,
+        "minHeight": 760,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "category": "GraphicsAndDesign",
+    "shortDescription": "Local-only pixel art, spritesheet, and GIF desktop app.",
+    "longDescription": "PixLab Desktop packages the existing PixLab web tools into a native desktop app for Windows and macOS with local-only processing."
+  }
+}

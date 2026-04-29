@@ -1,0 +1,27 @@
+[package]
+name = "pixlab_desktop"
+version = "0.1.0"
+description = "Local-only desktop app for PixLab"
+authors = ["Nguyen"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.77.2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+sha2 = "0.10"
+tiny_http = "0.12"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+urlencoding = "2.1"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

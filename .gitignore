@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.npm/
+
+# Rust and Tauri build output
+target/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
+# Local release artifacts
+release/
+releases/
+dist-release/
+*.dmg
+*.msi
+*.msix
+*.AppImage
+*.deb
+*.rpm
+*.app.tar.gz
+*.app.tar.gz.sig
+
+# Large optional runtime/model assets
+src-tauri/resources/rembg/
+src-tauri/resources/models/*.onnx
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

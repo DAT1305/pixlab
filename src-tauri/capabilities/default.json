@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability set for the local PixLab desktop shell.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}
