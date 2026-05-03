@@ -19,6 +19,7 @@
     "build": "tauri build --config src-tauri/tauri.standalone.conf.json --ci --no-sign",
     "build:mac": "tauri build --config src-tauri/tauri.standalone.conf.json --ci --no-sign --bundles app,dmg",
     "build:windows": "tauri build --config src-tauri/tauri.standalone.conf.json --ci --no-sign",
+    "build:windows:x86": "tauri build --config src-tauri/tauri.standalone.conf.json --ci --no-sign --target i686-pc-windows-msvc",
     "package:mac-ad-hoc": "bash ./scripts/package-macos-ad-hoc.sh",
     "prepare:frontend": "node ./scripts/prepare-local-frontend.mjs"
   },
