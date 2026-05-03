@@ -1,1 +1,0 @@
-async function e(e,t={},n){return window.__TAURI_INTERNALS__.invoke(e,t,n)}function t(e,t=`asset`){return window.__TAURI_INTERNALS__.convertFileSrc(e,t)}export{t as convertFileSrc,e as invoke};

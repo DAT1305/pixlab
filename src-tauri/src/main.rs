@@ -4,13 +4,15 @@ use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::fs;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -23,7 +25,7 @@ use reqwest::header::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use tauri::Manager;
+use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 use time::{format_description::well_known::Rfc3339, Duration as TimeDuration, OffsetDateTime};
 use tiny_http::{Response, Server, StatusCode};
 
@@ -37,6 +39,54 @@ const CODEX_CLIENT_VERSION: &str = "0.101.0";
 const CODEX_USER_AGENT: &str = "codex_cli_rs/0.101.0 (Mac OS 26.0.1; arm64) Apple_Terminal/464";
 const CODEX_IMAGE_MODEL: &str = "gpt-5.4";
 const CODEX_REFERENCE_IMAGE_MAX_DATA_URL_BYTES: usize = 24 * 1024 * 1024;
+const PET_OVERLAY_LABEL: &str = "pet-overlay";
+const DESKTOP_PETX_TRASH_EVENT: &str = "desktop-petx-trash";
+const DESKTOP_PETX_SCREEN_CLICK_EVENT: &str = "desktop-petx-screen-click";
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+#[cfg(target_os = "windows")]
+const VK_LBUTTON: i32 = 0x01;
+#[cfg(target_os = "macos")]
+const MAC_LEFT_MOUSE_BUTTON: u32 = 0;
+#[cfg(target_os = "macos")]
+const MAC_CG_EVENT_SOURCE_HID_SYSTEM_STATE: i32 = 1;
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+struct WindowsPoint {
+    x: i32,
+    y: i32,
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "user32")]
+extern "system" {
+    fn GetAsyncKeyState(v_key: i32) -> i16;
+    fn GetCursorPos(lp_point: *mut WindowsPoint) -> i32;
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+struct MacPoint {
+    x: f64,
+    y: f64,
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn CGEventSourceButtonState(state_id: i32, button: u32) -> bool;
+    fn CGEventCreate(source: *const std::ffi::c_void) -> *const std::ffi::c_void;
+    fn CGEventGetLocation(event: *const std::ffi::c_void) -> MacPoint;
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    fn CFRelease(cf: *const std::ffi::c_void);
+}
 
 #[derive(Default)]
 struct CodexState {
@@ -86,6 +136,10 @@ struct CodexGeneratePayload {
     prompt: String,
     #[serde(default)]
     reference_image_data_url: Option<String>,
+    #[serde(default)]
+    prompt_mode: Option<String>,
+    #[serde(default)]
+    file_name_prefix: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -129,6 +183,58 @@ struct CodexLoginPollResult {
 #[serde(rename_all = "camelCase")]
 struct OpenExternalUrlPayload {
     url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopSaveFilePayload {
+    suggested_file_name: String,
+    bytes_base64: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopSaveFileResult {
+    saved: bool,
+    path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopPetOverlayShowPayload {
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopPetOverlayMovePayload {
+    x: i32,
+    y: i32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopPetOverlayShowResult {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopPetOverlayCursorResult {
+    x: f64,
+    y: f64,
+    window_x: i32,
+    window_y: i32,
+    width: u32,
+    height: u32,
+    work_x: i32,
+    work_y: i32,
+    work_width: u32,
+    work_height: u32,
 }
 
 #[derive(Debug)]
@@ -587,10 +693,19 @@ fn build_spritesheet_prompt(user_prompt: &str, has_reference_image: bool) -> Str
     )
 }
 
-fn build_codex_request(prompt: &str, reference_image_data_url: Option<&str>) -> Value {
+fn build_codex_request(
+    prompt: &str,
+    reference_image_data_url: Option<&str>,
+    prompt_mode: Option<&str>,
+) -> Value {
+    let text = if prompt_mode == Some("raw") {
+        prompt.to_string()
+    } else {
+        build_spritesheet_prompt(prompt, reference_image_data_url.is_some())
+    };
     let mut content = vec![json!({
         "type": "input_text",
-        "text": build_spritesheet_prompt(prompt, reference_image_data_url.is_some())
+        "text": text
     })];
     if let Some(image_url) = reference_image_data_url {
         content.push(json!({
@@ -662,7 +777,11 @@ fn request_codex_spritesheet(
     let token = ensure_fresh_token(app, client, stored)?;
     let reference_image_data_url =
         sanitize_reference_image_data_url(payload.reference_image_data_url.as_ref())?;
-    let request_body = build_codex_request(&payload.prompt, reference_image_data_url.as_deref());
+    let request_body = build_codex_request(
+        &payload.prompt,
+        reference_image_data_url.as_deref(),
+        payload.prompt_mode.as_deref(),
+    );
     match request_codex_spritesheet_via_curl(&token, &request_body) {
         Ok(result) => Ok(result),
         Err(curl_error) => {
@@ -711,7 +830,8 @@ fn request_codex_spritesheet_via_curl(
     let request_json = serde_json::to_vec(request_body)
         .map_err(|error| format!("Failed to encode Codex request: {error}"))?;
     let request_url = format!("{CODEX_BASE_URL}/responses");
-    let mut child = Command::new("curl")
+    let mut command = Command::new("curl");
+    command
         .arg("--http1.1")
         .arg("-sS")
         .arg("--fail-with-body")
@@ -740,7 +860,9 @@ fn request_codex_spritesheet_via_curl(
         .arg("@-")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    hide_child_console(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|error| format!("Failed to start curl for Codex request: {error}"))?;
 
@@ -766,6 +888,17 @@ fn request_codex_spritesheet_via_curl(
 
     let body = String::from_utf8_lossy(&output.stdout);
     parse_codex_sse_text(&body)
+}
+
+fn hide_child_console(command: &mut Command) {
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = command;
+    }
 }
 
 fn extract_codex_error_message(value: &Value) -> Option<String> {
@@ -1011,6 +1144,7 @@ fn parse_codex_stream_response(
 fn persist_generated_spritesheet(
     app: &tauri::AppHandle,
     image: &CodexGeneratedImage,
+    file_name_prefix: Option<&str>,
 ) -> Result<CodexGenerateResult, String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(image.png_base64.as_bytes())
@@ -1022,8 +1156,10 @@ fn persist_generated_spritesheet(
     let output_dir = base_dir.join("generated");
     fs::create_dir_all(&output_dir)
         .map_err(|error| format!("Failed to create generated image directory: {error}"))?;
+    let prefix = sanitize_file_stem(file_name_prefix.unwrap_or("pixlab-spritesheet"));
     let file_name = format!(
-        "codex-spritesheet-{}.png",
+        "{}-{}.png",
+        prefix,
         OffsetDateTime::now_utc().unix_timestamp_nanos()
     );
     let image_path = output_dir.join(&file_name);
@@ -1259,6 +1395,76 @@ fn desktop_open_external_url(payload: OpenExternalUrlPayload) -> Result<(), Stri
     open_external_url(&payload.url)
 }
 
+fn sanitize_file_stem(value: &str) -> String {
+    let mut output = value
+        .trim()
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    while output.contains("--") {
+        output = output.replace("--", "-");
+    }
+    let output = output.trim_matches(['-', '_']).to_string();
+    if output.is_empty() {
+        "pixlab-image".to_string()
+    } else {
+        output
+    }
+}
+
+#[tauri::command]
+fn desktop_save_file(payload: DesktopSaveFilePayload) -> Result<DesktopSaveFileResult, String> {
+    let file_name = sanitize_download_file_name(&payload.suggested_file_name);
+    let mut dialog = rfd::FileDialog::new().set_file_name(&file_name);
+    if let Some(extension) = Path::new(&file_name)
+        .extension()
+        .and_then(|value| value.to_str())
+    {
+        if !extension.trim().is_empty() {
+            dialog = dialog.add_filter(&format!("{} file", extension.to_uppercase()), &[extension]);
+        }
+    }
+
+    let Some(path) = dialog.save_file() else {
+        return Ok(DesktopSaveFileResult {
+            saved: false,
+            path: None,
+        });
+    };
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(payload.bytes_base64.as_bytes())
+        .map_err(|error| format!("Failed to decode exported file: {error}"))?;
+    fs::write(&path, bytes).map_err(|error| format!("Failed to save file: {error}"))?;
+
+    Ok(DesktopSaveFileResult {
+        saved: true,
+        path: Some(path.to_string_lossy().to_string()),
+    })
+}
+
+fn sanitize_download_file_name(value: &str) -> String {
+    let trimmed = value.trim();
+    let fallback = if trimmed.is_empty() {
+        "pixlab-export.png"
+    } else {
+        trimmed
+    };
+    fallback
+        .chars()
+        .map(|ch| match ch {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '-',
+            _ => ch,
+        })
+        .collect()
+}
+
 #[tauri::command]
 async fn codex_generate_spritesheet(
     app: tauri::AppHandle,
@@ -1278,22 +1484,434 @@ async fn codex_generate_spritesheet(
             .build()
             .map_err(|error| format!("Failed to create HTTP client: {error}"))?;
         let image = request_codex_spritesheet(&app, &client, &payload)?;
-        persist_generated_spritesheet(&app, &image)
+        persist_generated_spritesheet(&app, &image, payload.file_name_prefix.as_deref())
     })
     .await
     .map_err(|error| format!("Codex worker failed: {error}"))?
 }
 
+#[tauri::command]
+async fn desktop_pet_overlay_show(
+    app: tauri::AppHandle,
+    payload: DesktopPetOverlayShowPayload,
+) -> Result<DesktopPetOverlayShowResult, String> {
+    let width = payload.width.clamp(128, 320);
+    let height = payload.height.clamp(144, 360);
+
+    if let Some(window) = app.get_webview_window(PET_OVERLAY_LABEL) {
+        window
+            .set_size(PhysicalSize::new(width, height))
+            .map_err(|error| format!("Failed to resize pet overlay: {error}"))?;
+        window
+            .show()
+            .map_err(|error| format!("Failed to show pet overlay: {error}"))?;
+        let _ = window.set_always_on_top(true);
+        let _ = window.eval(
+            "window.dispatchEvent(new StorageEvent('storage', { key: 'pixlab-petx-overlay' }));",
+        );
+        let position = window
+            .outer_position()
+            .map_err(|error| format!("Failed to read pet overlay position: {error}"))?;
+        return Ok(DesktopPetOverlayShowResult {
+            x: position.x,
+            y: position.y,
+            width,
+            height,
+        });
+    }
+
+    let (x, y) = resolve_pet_overlay_initial_position(&app, width, height);
+    let window = WebviewWindowBuilder::new(
+        &app,
+        PET_OVERLAY_LABEL,
+        WebviewUrl::App("pet-overlay.html".into()),
+    )
+    .title("PixLab Pet")
+    .inner_size(width as f64, height as f64)
+    .position(x as f64, y as f64)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .shadow(false)
+    .focused(false)
+    .build()
+    .map_err(|error| format!("Failed to create pet overlay: {error}"))?;
+
+    let _ = window.set_always_on_top(true);
+    Ok(DesktopPetOverlayShowResult {
+        x,
+        y,
+        width,
+        height,
+    })
+}
+
+fn resolve_pet_overlay_initial_position(
+    app: &tauri::AppHandle,
+    width: u32,
+    height: u32,
+) -> (i32, i32) {
+    let monitor = app
+        .get_webview_window("main")
+        .and_then(|window| window.current_monitor().ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten());
+
+    if let Some(monitor) = monitor {
+        let area = monitor.work_area();
+        let x = area.position.x + area.size.width as i32 - width as i32 - 32;
+        let y = area.position.y + area.size.height as i32 - height as i32 - 48;
+        return (x.max(area.position.x), y.max(area.position.y));
+    }
+
+    (96, 96)
+}
+
+#[tauri::command]
+fn desktop_pet_overlay_move(
+    app: tauri::AppHandle,
+    payload: DesktopPetOverlayMovePayload,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window(PET_OVERLAY_LABEL)
+        .ok_or_else(|| "Pet overlay is not open.".to_string())?;
+    window
+        .set_position(PhysicalPosition::new(payload.x, payload.y))
+        .map_err(|error| format!("Failed to move pet overlay: {error}"))
+}
+
+#[tauri::command]
+fn desktop_pet_overlay_close(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(PET_OVERLAY_LABEL) {
+        window
+            .close()
+            .map_err(|error| format!("Failed to close pet overlay: {error}"))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn desktop_pet_overlay_cursor(
+    app: tauri::AppHandle,
+) -> Result<DesktopPetOverlayCursorResult, String> {
+    let window = app
+        .get_webview_window(PET_OVERLAY_LABEL)
+        .ok_or_else(|| "Pet overlay is not open.".to_string())?;
+    let cursor = window
+        .cursor_position()
+        .map_err(|error| format!("Failed to read cursor position: {error}"))?;
+    let position = window
+        .outer_position()
+        .map_err(|error| format!("Failed to read pet overlay position: {error}"))?;
+    let size = window
+        .inner_size()
+        .map_err(|error| format!("Failed to read pet overlay size: {error}"))?;
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| app.primary_monitor().ok().flatten());
+    let (work_x, work_y, work_width, work_height) = if let Some(monitor) = monitor {
+        let area = monitor.work_area();
+        (
+            area.position.x,
+            area.position.y,
+            area.size.width,
+            area.size.height,
+        )
+    } else {
+        (0, 0, 1920, 1080)
+    };
+
+    Ok(DesktopPetOverlayCursorResult {
+        x: cursor.x,
+        y: cursor.y,
+        window_x: position.x,
+        window_y: position.y,
+        width: size.width,
+        height: size.height,
+        work_x,
+        work_y,
+        work_width,
+        work_height,
+    })
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Copy, Default)]
+struct RecycleBinSnapshot {
+    count: u64,
+    newest_modified_ms: u128,
+}
+
+#[cfg(target_os = "windows")]
+fn start_recycle_bin_watcher(app: tauri::AppHandle) {
+    thread::spawn(move || {
+        let mut previous = read_recycle_bin_snapshot();
+        loop {
+            thread::sleep(Duration::from_secs(2));
+            let next = read_recycle_bin_snapshot();
+            if next.count > previous.count || next.newest_modified_ms > previous.newest_modified_ms
+            {
+                let _ = app.emit(
+                    DESKTOP_PETX_TRASH_EVENT,
+                    json!({
+                        "createdAt": current_unix(),
+                    }),
+                );
+            }
+            previous = next;
+        }
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn read_recycle_bin_snapshot() -> RecycleBinSnapshot {
+    let mut snapshot = RecycleBinSnapshot::default();
+    for root in windows_drive_roots() {
+        read_drive_recycle_bin_snapshot(&root.join("$Recycle.Bin"), &mut snapshot);
+    }
+    snapshot
+}
+
+#[cfg(target_os = "windows")]
+fn windows_drive_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(system_drive) = std::env::var("SystemDrive") {
+        let normalized = format!("{}\\", system_drive.trim_end_matches('\\'));
+        roots.push(PathBuf::from(normalized));
+    }
+
+    for letter in b'A'..=b'Z' {
+        let root = PathBuf::from(format!("{}:\\", letter as char));
+        if root.exists() && !roots.iter().any(|existing| existing == &root) {
+            roots.push(root);
+        }
+    }
+    roots
+}
+
+#[cfg(target_os = "windows")]
+fn read_drive_recycle_bin_snapshot(recycle_bin: &Path, snapshot: &mut RecycleBinSnapshot) {
+    let Ok(user_bins) = fs::read_dir(recycle_bin) else {
+        return;
+    };
+
+    for user_bin in user_bins.flatten() {
+        let Ok(file_type) = user_bin.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+
+        let Ok(items) = fs::read_dir(user_bin.path()) else {
+            continue;
+        };
+        for item in items.flatten() {
+            let name = item.file_name();
+            let name = name.to_string_lossy();
+            if !name.starts_with("$R") && !name.starts_with("$I") {
+                continue;
+            }
+            snapshot.count = snapshot.count.saturating_add(1);
+            if let Ok(metadata) = item.metadata() {
+                snapshot.newest_modified_ms = snapshot
+                    .newest_modified_ms
+                    .max(metadata_modified_ms(&metadata));
+            }
+        }
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn metadata_modified_ms(metadata: &fs::Metadata) -> u128 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, Default)]
+struct MacTrashSnapshot {
+    count: u64,
+    newest_modified_ms: u128,
+}
+
+#[cfg(target_os = "macos")]
+fn start_macos_trash_watcher(app: tauri::AppHandle) {
+    thread::spawn(move || {
+        let mut previous = read_macos_trash_snapshot();
+        loop {
+            thread::sleep(Duration::from_secs(2));
+            let next = read_macos_trash_snapshot();
+            if next.count > previous.count || next.newest_modified_ms > previous.newest_modified_ms
+            {
+                let _ = app.emit(
+                    DESKTOP_PETX_TRASH_EVENT,
+                    json!({
+                        "createdAt": current_unix(),
+                    }),
+                );
+            }
+            previous = next;
+        }
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn read_macos_trash_snapshot() -> MacTrashSnapshot {
+    let mut snapshot = MacTrashSnapshot::default();
+
+    if let Some(home) = std::env::var_os("HOME") {
+        read_macos_trash_entries(&PathBuf::from(home).join(".Trash"), &mut snapshot);
+    }
+
+    if let Ok(volumes) = fs::read_dir("/Volumes") {
+        for volume in volumes.flatten() {
+            let trashes = volume.path().join(".Trashes");
+            let Ok(user_dirs) = fs::read_dir(trashes) else {
+                continue;
+            };
+            for user_dir in user_dirs.flatten() {
+                let Ok(file_type) = user_dir.file_type() else {
+                    continue;
+                };
+                if file_type.is_dir() {
+                    read_macos_trash_entries(&user_dir.path(), &mut snapshot);
+                }
+            }
+        }
+    }
+
+    snapshot
+}
+
+#[cfg(target_os = "macos")]
+fn read_macos_trash_entries(trash_dir: &Path, snapshot: &mut MacTrashSnapshot) {
+    let Ok(items) = fs::read_dir(trash_dir) else {
+        return;
+    };
+
+    for item in items.flatten() {
+        snapshot.count = snapshot.count.saturating_add(1);
+        if let Ok(metadata) = item.metadata() {
+            snapshot.newest_modified_ms = snapshot
+                .newest_modified_ms
+                .max(metadata_modified_ms(&metadata));
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn start_global_mouse_click_watcher(app: tauri::AppHandle) {
+    thread::spawn(move || {
+        let mut was_pressed = false;
+        loop {
+            thread::sleep(Duration::from_millis(32));
+            if app.get_webview_window(PET_OVERLAY_LABEL).is_none() {
+                was_pressed = false;
+                continue;
+            }
+
+            let pressed = unsafe { GetAsyncKeyState(VK_LBUTTON) < 0 };
+            if pressed && !was_pressed {
+                let mut point = WindowsPoint::default();
+                if unsafe { GetCursorPos(&mut point) } != 0 {
+                    let _ = app.emit(
+                        DESKTOP_PETX_SCREEN_CLICK_EVENT,
+                        json!({
+                            "x": point.x,
+                            "y": point.y,
+                            "createdAt": current_unix(),
+                        }),
+                    );
+                }
+            }
+            was_pressed = pressed;
+        }
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn start_global_mouse_click_watcher(app: tauri::AppHandle) {
+    thread::spawn(move || {
+        let mut was_pressed = false;
+        loop {
+            thread::sleep(Duration::from_millis(32));
+            if app.get_webview_window(PET_OVERLAY_LABEL).is_none() {
+                was_pressed = false;
+                continue;
+            }
+
+            let pressed = unsafe {
+                CGEventSourceButtonState(
+                    MAC_CG_EVENT_SOURCE_HID_SYSTEM_STATE,
+                    MAC_LEFT_MOUSE_BUTTON,
+                )
+            };
+            if pressed && !was_pressed {
+                if let Some(point) = read_macos_cursor_position() {
+                    let _ = app.emit(
+                        DESKTOP_PETX_SCREEN_CLICK_EVENT,
+                        json!({
+                            "x": point.x,
+                            "y": point.y,
+                            "createdAt": current_unix(),
+                        }),
+                    );
+                }
+            }
+            was_pressed = pressed;
+        }
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn read_macos_cursor_position() -> Option<MacPoint> {
+    unsafe {
+        let event = CGEventCreate(std::ptr::null());
+        if event.is_null() {
+            return None;
+        }
+        let point = CGEventGetLocation(event);
+        CFRelease(event);
+        Some(point)
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(CodexState::default())
+        .setup(|app| {
+            #[cfg(target_os = "windows")]
+            {
+                start_recycle_bin_watcher(app.handle().clone());
+                start_global_mouse_click_watcher(app.handle().clone());
+            }
+            #[cfg(target_os = "macos")]
+            {
+                start_macos_trash_watcher(app.handle().clone());
+                start_global_mouse_click_watcher(app.handle().clone());
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             codex_auth_status,
             codex_login_start,
             codex_login_cancel,
             codex_login_status,
             desktop_open_external_url,
-            codex_generate_spritesheet
+            desktop_save_file,
+            codex_generate_spritesheet,
+            desktop_pet_overlay_show,
+            desktop_pet_overlay_move,
+            desktop_pet_overlay_close,
+            desktop_pet_overlay_cursor
         ])
         .run(tauri::generate_context!())
         .expect("failed to run PixLab desktop app");
