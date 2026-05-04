@@ -1521,7 +1521,7 @@ async fn desktop_pet_overlay_show(
     }
 
     let (x, y) = resolve_pet_overlay_initial_position(&app, width, height);
-    let window = WebviewWindowBuilder::new(
+    let pet_window_builder = WebviewWindowBuilder::new(
         &app,
         PET_OVERLAY_LABEL,
         WebviewUrl::App("pet-overlay.html".into()),
@@ -1531,13 +1531,17 @@ async fn desktop_pet_overlay_show(
     .position(x as f64, y as f64)
     .resizable(false)
     .decorations(false)
-    .transparent(true)
     .always_on_top(true)
     .skip_taskbar(true)
     .shadow(false)
-    .focused(false)
-    .build()
-    .map_err(|error| format!("Failed to create pet overlay: {error}"))?;
+    .focused(false);
+
+    #[cfg(not(target_os = "macos"))]
+    let pet_window_builder = pet_window_builder.transparent(true);
+
+    let window = pet_window_builder
+        .build()
+        .map_err(|error| format!("Failed to create pet overlay: {error}"))?;
 
     let _ = window.set_always_on_top(true);
     Ok(DesktopPetOverlayShowResult {
