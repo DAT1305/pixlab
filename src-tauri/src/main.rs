@@ -42,6 +42,10 @@ const CODEX_REFERENCE_IMAGE_MAX_DATA_URL_BYTES: usize = 24 * 1024 * 1024;
 const PET_OVERLAY_LABEL: &str = "pet-overlay";
 const DESKTOP_PETX_TRASH_EVENT: &str = "desktop-petx-trash";
 const DESKTOP_PETX_SCREEN_CLICK_EVENT: &str = "desktop-petx-screen-click";
+const DESKTOP_PETX_TYPING_EVENT: &str = "desktop-petx-typing";
+const PIXLAB_GITHUB_LATEST_RELEASE_API: &str =
+    "https://api.github.com/repos/DAT1305/pixlab/releases/latest";
+const PIXLAB_UPDATE_USER_AGENT: &str = "PixLabDesktopUpdater/0.1";
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 #[cfg(target_os = "windows")]
@@ -78,6 +82,7 @@ struct MacPoint {
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn CGEventSourceButtonState(state_id: i32, button: u32) -> bool;
+    fn CGEventSourceKeyState(state_id: i32, key: u16) -> bool;
     fn CGEventCreate(source: *const std::ffi::c_void) -> *const std::ffi::c_void;
     fn CGEventGetLocation(event: *const std::ffi::c_void) -> MacPoint;
 }
@@ -197,6 +202,47 @@ struct DesktopSaveFilePayload {
 struct DesktopSaveFileResult {
     saved: bool,
     path: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopUpdateCheckResult {
+    current_version: String,
+    latest_version: String,
+    update_available: bool,
+    release_name: String,
+    release_url: String,
+    asset_name: Option<String>,
+    asset_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopUpdateInstallPayload {
+    release_url: String,
+    asset_name: Option<String>,
+    asset_url: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopUpdateInstallResult {
+    launched: bool,
+    path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+    name: Option<String>,
+    html_url: String,
+    assets: Vec<GithubReleaseAsset>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubReleaseAsset {
+    name: String,
+    browser_download_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -768,13 +814,46 @@ fn sanitize_reference_image_data_url(value: Option<&String>) -> Result<Option<St
     Ok(Some(data_url.to_string()))
 }
 
+fn load_fresh_codex_token_locked(
+    app: &tauri::AppHandle,
+    client: &Client,
+    lock: &Arc<Mutex<()>>,
+) -> Result<CodexTokenStorage, String> {
+    let _guard = lock
+        .lock()
+        .map_err(|_| "Failed to lock Codex session.".to_string())?;
+    let stored = load_token(app)?.ok_or_else(|| "Codex is not logged in.".to_string())?;
+    ensure_fresh_token(app, client, stored)
+}
+
+fn refresh_codex_token_locked(
+    app: &tauri::AppHandle,
+    client: &Client,
+    lock: &Arc<Mutex<()>>,
+    current: &CodexTokenStorage,
+) -> Result<CodexTokenStorage, String> {
+    let _guard = lock
+        .lock()
+        .map_err(|_| "Failed to lock Codex session.".to_string())?;
+    let stored = load_token(app)?.unwrap_or_else(|| current.clone());
+    if stored.access_token != current.access_token
+        && !stored.access_token.trim().is_empty()
+        && !needs_refresh(&stored)
+    {
+        return Ok(stored);
+    }
+    let refreshed = refresh_tokens(client, &stored)?;
+    save_token(app, &refreshed)?;
+    Ok(refreshed)
+}
+
 fn request_codex_spritesheet(
     app: &tauri::AppHandle,
     client: &Client,
+    lock: &Arc<Mutex<()>>,
     payload: &CodexGeneratePayload,
 ) -> Result<CodexGeneratedImage, String> {
-    let stored = load_token(app)?.ok_or_else(|| "Codex is not logged in.".to_string())?;
-    let token = ensure_fresh_token(app, client, stored)?;
+    let token = load_fresh_codex_token_locked(app, client, lock)?;
     let reference_image_data_url =
         sanitize_reference_image_data_url(payload.reference_image_data_url.as_ref())?;
     let request_body = build_codex_request(
@@ -798,8 +877,7 @@ fn request_codex_spritesheet(
                 })?;
 
             if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-                let refreshed = refresh_tokens(client, &token)?;
-                save_token(app, &refreshed)?;
+                let refreshed = refresh_codex_token_locked(app, client, lock, &token)?;
                 match request_codex_spritesheet_via_curl(&refreshed, &request_body) {
                     Ok(result) => return Ok(result),
                     Err(retry_curl_error) => {
@@ -1449,6 +1527,284 @@ fn desktop_save_file(payload: DesktopSaveFilePayload) -> Result<DesktopSaveFileR
     })
 }
 
+#[tauri::command]
+async fn desktop_update_check() -> Result<DesktopUpdateCheckResult, String> {
+    tauri::async_runtime::spawn_blocking(check_latest_update)
+        .await
+        .map_err(|error| format!("Update check worker failed: {error}"))?
+}
+
+fn check_latest_update() -> Result<DesktopUpdateCheckResult, String> {
+    let client = Client::builder()
+        .build()
+        .map_err(|error| format!("Failed to create update client: {error}"))?;
+    let response = client
+        .get(PIXLAB_GITHUB_LATEST_RELEASE_API)
+        .header(USER_AGENT, PIXLAB_UPDATE_USER_AGENT)
+        .header(ACCEPT, "application/vnd.github+json")
+        .send()
+        .map_err(|error| format!("Failed to check GitHub releases: {error}"))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().unwrap_or_default();
+        return Err(format!(
+            "GitHub release check failed with status {}: {}",
+            status.as_u16(),
+            body
+        ));
+    }
+
+    let release: GithubRelease = response
+        .json()
+        .map_err(|error| format!("Failed to parse GitHub release: {error}"))?;
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+    let latest_version = normalize_release_version(&release.tag_name);
+    let update_available = compare_versions(&latest_version, &current_version) > 0;
+    let selected_asset = select_update_asset(&release.assets);
+    Ok(DesktopUpdateCheckResult {
+        current_version,
+        latest_version,
+        update_available,
+        release_name: release.name.unwrap_or_else(|| release.tag_name.clone()),
+        release_url: release.html_url,
+        asset_name: selected_asset.as_ref().map(|asset| asset.name.clone()),
+        asset_url: selected_asset.map(|asset| asset.browser_download_url.clone()),
+    })
+}
+
+#[tauri::command]
+async fn desktop_update_install(
+    app: tauri::AppHandle,
+    payload: DesktopUpdateInstallPayload,
+) -> Result<DesktopUpdateInstallResult, String> {
+    let app_for_exit = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || install_update_asset(payload))
+        .await
+        .map_err(|error| format!("Update install worker failed: {error}"))??;
+    if result.launched {
+        app_for_exit.exit(0);
+    }
+    Ok(result)
+}
+
+fn install_update_asset(
+    payload: DesktopUpdateInstallPayload,
+) -> Result<DesktopUpdateInstallResult, String> {
+    let Some(asset_url) = payload.asset_url.filter(|url| !url.trim().is_empty()) else {
+        open_external_url(&payload.release_url)?;
+        return Ok(DesktopUpdateInstallResult {
+            launched: false,
+            path: None,
+        });
+    };
+    let asset_name = payload
+        .asset_name
+        .as_deref()
+        .map(sanitize_download_file_name)
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| "pixlab-update".to_string());
+    let target_path = std::env::temp_dir().join(format!(
+        "pixlab-update-{}-{asset_name}",
+        random_hex(4)
+    ));
+
+    let client = Client::builder()
+        .build()
+        .map_err(|error| format!("Failed to create update download client: {error}"))?;
+    let mut response = client
+        .get(&asset_url)
+        .header(USER_AGENT, PIXLAB_UPDATE_USER_AGENT)
+        .send()
+        .map_err(|error| format!("Failed to download update: {error}"))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().unwrap_or_default();
+        return Err(format!(
+            "Update download failed with status {}: {}",
+            status.as_u16(),
+            body
+        ));
+    }
+
+    let mut file = fs::File::create(&target_path)
+        .map_err(|error| format!("Failed to create update file: {error}"))?;
+    response
+        .copy_to(&mut file)
+        .map_err(|error| format!("Failed to write update file: {error}"))?;
+    file.flush()
+        .map_err(|error| format!("Failed to flush update file: {error}"))?;
+
+    launch_update_file(&target_path)?;
+    Ok(DesktopUpdateInstallResult {
+        launched: true,
+        path: Some(target_path.to_string_lossy().to_string()),
+    })
+}
+
+fn launch_update_file(path: &Path) -> Result<(), String> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    #[cfg(target_os = "windows")]
+    {
+        if extension == "msi" {
+            Command::new("msiexec")
+                .arg("/i")
+                .arg(path)
+                .spawn()
+                .map_err(|error| format!("Failed to launch MSI installer: {error}"))?;
+        } else {
+            Command::new(path)
+                .spawn()
+                .map_err(|error| format!("Failed to launch update installer: {error}"))?;
+        }
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("Failed to open macOS update: {error}"))?;
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("Failed to open update: {error}"))?;
+        return Ok(());
+    }
+
+    #[allow(unreachable_code)]
+    Err(format!("Unsupported update asset type: {extension}"))
+}
+
+fn normalize_release_version(version: &str) -> String {
+    version
+        .trim()
+        .trim_start_matches('v')
+        .trim_start_matches('V')
+        .to_string()
+}
+
+fn compare_versions(a: &str, b: &str) -> i8 {
+    let left = parse_version_numbers(a);
+    let right = parse_version_numbers(b);
+    let max_len = left.len().max(right.len()).max(3);
+    for index in 0..max_len {
+        let left_value = *left.get(index).unwrap_or(&0);
+        let right_value = *right.get(index).unwrap_or(&0);
+        if left_value > right_value {
+            return 1;
+        }
+        if left_value < right_value {
+            return -1;
+        }
+    }
+    0
+}
+
+fn parse_version_numbers(version: &str) -> Vec<u64> {
+    normalize_release_version(version)
+        .split(|ch: char| !ch.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u64>().ok())
+        .collect()
+}
+
+fn select_update_asset(assets: &[GithubReleaseAsset]) -> Option<&GithubReleaseAsset> {
+    assets
+        .iter()
+        .filter_map(|asset| update_asset_score(&asset.name).map(|score| (score, asset)))
+        .max_by_key(|(score, _)| *score)
+        .map(|(_, asset)| asset)
+}
+
+fn update_asset_score(name: &str) -> Option<i32> {
+    let lower = name.to_ascii_lowercase();
+    if lower.contains("source") {
+        return None;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if !(lower.ends_with(".msi") || lower.ends_with(".exe") || lower.ends_with(".msix")) {
+            return None;
+        }
+        let mut score = if lower.ends_with(".msi") { 80 } else { 70 };
+        #[cfg(target_pointer_width = "64")]
+        {
+            if lower.contains("arm64") || lower.contains("aarch64") {
+                score -= 50;
+            } else if lower.contains("x64")
+                || lower.contains("x86_64")
+                || lower.contains("amd64")
+                || lower.contains("win64")
+            {
+                score += 30;
+            } else if lower.contains("x86") || lower.contains("i686") || lower.contains("win32") {
+                score -= 25;
+            }
+        }
+        #[cfg(target_pointer_width = "32")]
+        {
+            if lower.contains("x86") || lower.contains("i686") || lower.contains("win32") {
+                score += 30;
+            } else if lower.contains("x64") || lower.contains("x86_64") || lower.contains("amd64") {
+                score -= 50;
+            }
+        }
+        return Some(score);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if !(lower.ends_with(".dmg") || lower.ends_with(".app.tar.gz")) {
+            return None;
+        }
+        let mut score = if lower.ends_with(".dmg") { 80 } else { 65 };
+        #[cfg(target_arch = "aarch64")]
+        {
+            if lower.contains("arm64") || lower.contains("aarch64") || lower.contains("universal") {
+                score += 30;
+            } else if lower.contains("x64") || lower.contains("x86_64") || lower.contains("intel") {
+                score -= 35;
+            }
+        }
+        #[cfg(target_arch = "x86_64")]
+        {
+            if lower.contains("x64")
+                || lower.contains("x86_64")
+                || lower.contains("intel")
+                || lower.contains("universal")
+            {
+                score += 30;
+            } else if lower.contains("arm64") || lower.contains("aarch64") {
+                score -= 35;
+            }
+        }
+        return Some(score);
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        if lower.ends_with(".appimage") || lower.ends_with(".deb") || lower.ends_with(".rpm") {
+            return Some(60);
+        }
+        return None;
+    }
+
+    #[allow(unreachable_code)]
+    None
+}
+
 fn sanitize_download_file_name(value: &str) -> String {
     let trimmed = value.trim();
     let fallback = if trimmed.is_empty() {
@@ -1476,14 +1832,11 @@ async fn codex_generate_spritesheet(
     }
     let lock = state.lock.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard = lock
-            .lock()
-            .map_err(|_| "Failed to lock Codex session.".to_string())?;
         let client = Client::builder()
             .http1_only()
             .build()
             .map_err(|error| format!("Failed to create HTTP client: {error}"))?;
-        let image = request_codex_spritesheet(&app, &client, &payload)?;
+        let image = request_codex_spritesheet(&app, &client, &lock, &payload)?;
         persist_generated_spritesheet(&app, &image, payload.file_name_prefix.as_deref())
     })
     .await
@@ -1841,6 +2194,49 @@ fn start_global_mouse_click_watcher(app: tauri::AppHandle) {
     });
 }
 
+#[cfg(target_os = "windows")]
+fn start_global_typing_watcher(app: tauri::AppHandle) {
+    thread::spawn(move || {
+        let mut was_pressed = false;
+        loop {
+            thread::sleep(Duration::from_millis(60));
+            if app.get_webview_window(PET_OVERLAY_LABEL).is_none() {
+                was_pressed = false;
+                continue;
+            }
+
+            let pressed = is_any_windows_typing_key_pressed();
+            if pressed && !was_pressed {
+                let _ = app.emit(
+                    DESKTOP_PETX_TYPING_EVENT,
+                    json!({
+                        "createdAt": current_unix(),
+                    }),
+                );
+            }
+            was_pressed = pressed;
+        }
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn is_any_windows_typing_key_pressed() -> bool {
+    for key in 0x08..=0xDE {
+        if is_windows_typing_key(key) && unsafe { GetAsyncKeyState(key) < 0 } {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn is_windows_typing_key(key: i32) -> bool {
+    matches!(
+        key,
+        0x08 | 0x09 | 0x0D | 0x20 | 0x30..=0x5A | 0x60..=0x6F | 0xBA..=0xC0 | 0xDB..=0xDE
+    )
+}
+
 #[cfg(target_os = "macos")]
 fn start_global_mouse_click_watcher(app: tauri::AppHandle) {
     thread::spawn(move || {
@@ -1876,6 +2272,48 @@ fn start_global_mouse_click_watcher(app: tauri::AppHandle) {
 }
 
 #[cfg(target_os = "macos")]
+fn start_global_typing_watcher(app: tauri::AppHandle) {
+    thread::spawn(move || {
+        let mut was_pressed = false;
+        loop {
+            thread::sleep(Duration::from_millis(60));
+            if app.get_webview_window(PET_OVERLAY_LABEL).is_none() {
+                was_pressed = false;
+                continue;
+            }
+
+            let pressed = is_any_macos_typing_key_pressed();
+            if pressed && !was_pressed {
+                let _ = app.emit(
+                    DESKTOP_PETX_TYPING_EVENT,
+                    json!({
+                        "createdAt": current_unix(),
+                    }),
+                );
+            }
+            was_pressed = pressed;
+        }
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn is_any_macos_typing_key_pressed() -> bool {
+    for key in 0_u16..=53 {
+        if is_macos_typing_key(key)
+            && unsafe { CGEventSourceKeyState(MAC_CG_EVENT_SOURCE_HID_SYSTEM_STATE, key) }
+        {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(target_os = "macos")]
+fn is_macos_typing_key(key: u16) -> bool {
+    !matches!(key, 54 | 55 | 56 | 57 | 58 | 59 | 60 | 61 | 62 | 63)
+}
+
+#[cfg(target_os = "macos")]
 fn read_macos_cursor_position() -> Option<MacPoint> {
     unsafe {
         let event = CGEventCreate(std::ptr::null());
@@ -1896,11 +2334,13 @@ fn main() {
             {
                 start_recycle_bin_watcher(app.handle().clone());
                 start_global_mouse_click_watcher(app.handle().clone());
+                start_global_typing_watcher(app.handle().clone());
             }
             #[cfg(target_os = "macos")]
             {
                 start_macos_trash_watcher(app.handle().clone());
                 start_global_mouse_click_watcher(app.handle().clone());
+                start_global_typing_watcher(app.handle().clone());
             }
             Ok(())
         })
@@ -1911,6 +2351,8 @@ fn main() {
             codex_login_status,
             desktop_open_external_url,
             desktop_save_file,
+            desktop_update_check,
+            desktop_update_install,
             codex_generate_spritesheet,
             desktop_pet_overlay_show,
             desktop_pet_overlay_move,

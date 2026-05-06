@@ -1,4 +1,5 @@
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,6 +9,8 @@ const desktopRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(desktopRoot, '..');
 const sourceDist = path.join(repoRoot, 'dist');
 const targetDist = path.join(desktopRoot, 'dist-desktop');
+const desktopPetGallery = path.join(desktopRoot, 'pet-gallery');
+const targetPetGallery = path.join(targetDist, 'pet-gallery');
 
 function stripRemoteHeadTags(html) {
   return html
@@ -38,7 +41,45 @@ async function patchHtmlFiles(rootDir) {
   }
 }
 
+async function copyDesktopPetGallery() {
+  if (!existsSync(desktopPetGallery)) return;
+  await rm(targetPetGallery, { recursive: true, force: true });
+  await cp(desktopPetGallery, targetPetGallery, { recursive: true, force: true });
+  await writeGeneratedPetGalleryManifest(targetPetGallery);
+}
+
+async function writeGeneratedPetGalleryManifest(galleryRoot) {
+  const entries = await readdir(galleryRoot, { withFileTypes: true });
+  const pets = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const folder = entry.name;
+    const petJsonPath = path.join(galleryRoot, folder, 'pet.json');
+    const spritesheetPath = path.join(galleryRoot, folder, 'spritesheet.webp');
+    if (!existsSync(petJsonPath) || !existsSync(spritesheetPath)) continue;
+    try {
+      const pet = JSON.parse(await readFile(petJsonPath, 'utf8'));
+      const displayName = String(pet.displayName || pet.name || pet.id || folder).trim();
+      pets.push({
+        id: String(pet.id || folder).trim(),
+        displayName,
+        description: String(pet.description || displayName).trim(),
+        folder,
+      });
+    } catch (error) {
+      console.warn(`Skipping invalid pet gallery item ${folder}:`, error);
+    }
+  }
+  pets.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  await writeFile(
+    path.join(galleryRoot, 'manifest.json'),
+    `${JSON.stringify({ version: 1, pets }, null, 2)}\n`,
+    'utf8',
+  );
+}
+
 await rm(targetDist, { recursive: true, force: true });
 await mkdir(targetDist, { recursive: true });
 await cp(sourceDist, targetDist, { recursive: true, force: true });
+await copyDesktopPetGallery();
 await patchHtmlFiles(targetDist);

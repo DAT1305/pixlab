@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "pets": [
+    {
+      "id": "donal-trump",
+      "displayName": "DONAL TRUMP",
+      "description": "DONAL TRUMP",
+      "folder": "donal-trump-pet"
+    },
+    {
+      "id": "elon-musk",
+      "displayName": "elon musk",
+      "description": "elon musk",
+      "folder": "elon-musk-pet"
+    },
+    {
+      "id": "pixpet",
+      "displayName": "PixPet",
+      "description": "A custom pet named PixPet.",
+      "folder": "pixpet-pet"
+    }
+  ]
+}

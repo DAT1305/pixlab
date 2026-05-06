@@ -5,154 +5,78 @@
 <h1 align="center">PixLab Desktop</h1>
 
 <p align="center">
-  A sharp, local-first pixel-art studio for creators who want clean sprites, fast exports, and zero browser friction.
+  A desktop studio for pixel art, spritesheets, animation previews, and screen pets.
 </p>
 
 <p align="center">
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-f0b35a.svg" /></a>
   <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2.x-24c8db.svg" />
-  <img alt="macOS" src="https://img.shields.io/badge/macOS-ready-111111.svg" />
   <img alt="Windows" src="https://img.shields.io/badge/Windows-ready-2563eb.svg" />
+  <img alt="macOS" src="https://img.shields.io/badge/macOS-ready-111111.svg" />
 </p>
 
 <p align="center">
   <a href="https://github.com/DAT1305/pixlab/releases/latest">
-    <img alt="Download latest release" src="https://img.shields.io/badge/Download-latest%20release-f0b35a?style=for-the-badge" />
+    <img alt="Download latest release" src="https://img.shields.io/badge/Download-latest%20release-111111?style=for-the-badge" />
   </a>
 </p>
 
 <p align="center">
-  <img src="./Screenshot%202026-04-30%20at%2005.52.00.png" alt="PixLab Desktop screenshot" />
+  <a href="./README.vi.md">Tiếng Việt</a> ·
+  <a href="./README.zh.md">中文</a>
 </p>
 
-<p align="center">
-  <a href="#english">English</a> ·
-  <a href="#tieng-viet">Tiếng Việt</a> ·
-  <a href="#zh">中文</a>
-</p>
+## What It Does
 
-<a id="english"></a>
+PixLab Desktop gives creators one focused app for preparing pixel assets and lightweight animated companions. It works well for game prototypes, stickers, social posts, and animation tests.
 
-## English
+## Features
 
-PixLab Desktop packages the PixLab creative toolchain into a native Tauri app. It is built for pixel artists, game developers, and asset teams who need a focused desktop workspace instead of a pile of browser tabs.
+- Convert images into crisp pixel-art output.
+- Clean sprites and remove simple backgrounds.
+- Slice spritesheets, align frames, preview motion, and export GIFs.
+- Generate animation sheets from text or reference images.
+- Create animated pets, preview their actions, and attach them to the desktop.
+- Keep a pet history and a curated pet library.
+- Import and export pet files for sharing.
+- Check for app updates from GitHub Releases.
 
-### Features
+## Download
 
-- Image-to-pixel-art conversion with crisp, game-ready output.
-- Sprite cleanup tools for transparent backgrounds and tidy edges.
-- Spritesheet pipeline with frame slicing, alignment, and preview.
-- GIF export for quick animation sharing and iteration.
-- Built-in pixel editor for hands-on fixes after conversion.
-- Optional Codex-powered spritesheet generation for AI-assisted asset creation.
-- Local desktop shell with MIT licensing and GitHub release automation.
+Prebuilt installers are published on the [Releases page](https://github.com/DAT1305/pixlab/releases/latest).
 
-### Run
+Windows builds include both 64-bit and 32-bit installers when available.
 
-Requirements: Node.js 20+, Rust stable, npm, and the platform SDK for your OS.
+## Run From Source
+
+Requirements:
+
+- Node.js 20+
+- Rust stable
+- npm
+- Windows Build Tools or the equivalent platform SDK
 
 ```bash
 npm ci
 npm run dev
 ```
 
-### Build
+## Build
 
 ```bash
-npm run build:mac      # macOS .app and .dmg, run on macOS
-npm run build:windows  # Windows installer, run on Windows
+npm run build:windows      # Windows 64-bit installer
+npm run build:windows:x86  # Windows 32-bit installer
+npm run build:mac          # macOS app and DMG, run on macOS
 ```
 
-Prebuilt macOS and Windows packages are available from this repository's Releases page when published.
+## macOS Note
 
-macOS note: the public build is ad-hoc signed but not Apple-notarized yet. If Gatekeeper blocks it after copying to Applications, run:
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/PixLab Desktop.app"
-```
-
-<a id="tieng-viet"></a>
-
-## Tiếng Việt
-
-PixLab Desktop đưa toàn bộ trải nghiệm PixLab vào một ứng dụng Tauri native: nhanh, gọn, đẹp và sinh ra để làm asset pixel art nghiêm túc.
-
-### Tính năng
-
-- Chuyển ảnh thành pixel art sắc nét, sẵn sàng dùng trong game.
-- Làm sạch sprite, xử lý nền trong suốt và viền rác.
-- Cắt spritesheet, căn frame, xem trước chuyển động.
-- Xuất GIF để kiểm tra animation và chia sẻ nhanh.
-- Pixel editor tích hợp để chỉnh tay sau khi convert.
-- Tùy chọn tạo spritesheet bằng Codex cho quá trình làm asset bằng AI.
-- Mã nguồn MIT, hướng tới trải nghiệm macOS và Windows.
-
-### Chạy dự án
-
-Cần có Node.js 20+, Rust stable, npm và SDK/build tools của hệ điều hành.
-
-```bash
-npm ci
-npm run dev
-```
-
-### Build release
-
-```bash
-npm run build:mac      # tạo .app và .dmg trên macOS
-npm run build:windows  # tạo installer Windows trên Windows
-```
-
-Bản cài đặt macOS và Windows sẽ nằm trong mục Releases của repo khi phát hành.
-
-Lưu ý macOS: bản public hiện ký ad-hoc, chưa notarize bằng Apple Developer ID. Nếu Gatekeeper chặn sau khi copy vào Applications, chạy:
+The public macOS build may not be notarized yet. If Gatekeeper blocks the app after copying it to Applications, run:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/PixLab Desktop.app"
 ```
 
-<a id="zh"></a>
+## License
 
-## 中文
-
-PixLab Desktop 将 PixLab 的创作流程打包成原生 Tauri 桌面应用，面向像素艺术、游戏素材和快速动画迭代。
-
-### 功能
-
-- 将图片转换为清晰的游戏级像素艺术。
-- 清理 sprite、透明背景和边缘杂点。
-- 支持 spritesheet 切帧、对齐和预览。
-- 导出 GIF，方便检查和分享动画。
-- 内置像素编辑器，转换后可直接微调。
-- 可选 Codex spritesheet 生成，用于 AI 辅助素材创作。
-- MIT 开源许可，面向 macOS 和 Windows 桌面体验。
-
-### 运行
-
-需要 Node.js 20+、Rust stable、npm，以及当前系统的构建工具。
-
-```bash
-npm ci
-npm run dev
-```
-
-### 构建
-
-```bash
-npm run build:mac      # 在 macOS 上生成 .app 和 .dmg
-npm run build:windows  # 在 Windows 上生成安装包
-```
-
-发布后，可在本仓库的 Releases 页面下载 macOS 和 Windows 安装包。
-
-macOS 说明：公开版本目前使用 ad-hoc 签名，尚未通过 Apple notarization。如果复制到 Applications 后仍被 Gatekeeper 阻止，请运行：
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/PixLab Desktop.app"
-```
-
-<p align="center">
-  <a href="https://buymeacoffee.com/Dat1305">
-    <img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=000000" />
-  </a>
-</p>
+MIT

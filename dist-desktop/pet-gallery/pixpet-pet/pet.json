@@ -1,0 +1,299 @@
+{
+  "schemaVersion": 7,
+  "id": "pixpet",
+  "displayName": "PixPet",
+  "description": "A custom pet named PixPet.",
+  "type": "pet",
+  "createdAt": 1778030856086,
+  "spritesheetPath": "spritesheet.webp",
+  "cell": {
+    "width": 192,
+    "height": 208
+  },
+  "atlas": {
+    "columns": 6,
+    "rows": 40
+  },
+  "animations": [
+    {
+      "id": "idle",
+      "label": "Idle",
+      "row": 0,
+      "frames": 6,
+      "delay": 140
+    },
+    {
+      "id": "look-up",
+      "label": "Look up",
+      "row": 1,
+      "frames": 1,
+      "delay": 130
+    },
+    {
+      "id": "look-up-right",
+      "label": "Look up right",
+      "row": 2,
+      "frames": 1,
+      "delay": 130
+    },
+    {
+      "id": "look-right",
+      "label": "Look right",
+      "row": 3,
+      "frames": 1,
+      "delay": 130
+    },
+    {
+      "id": "look-down-right",
+      "label": "Look down right",
+      "row": 4,
+      "frames": 1,
+      "delay": 130
+    },
+    {
+      "id": "look-down",
+      "label": "Look down",
+      "row": 5,
+      "frames": 1,
+      "delay": 130
+    },
+    {
+      "id": "look-down-left",
+      "label": "Look down left",
+      "row": 6,
+      "frames": 1,
+      "delay": 130
+    },
+    {
+      "id": "look-left",
+      "label": "Look left",
+      "row": 7,
+      "frames": 1,
+      "delay": 130
+    },
+    {
+      "id": "look-up-left",
+      "label": "Look up left",
+      "row": 8,
+      "frames": 1,
+      "delay": 130
+    },
+    {
+      "id": "drag",
+      "label": "Dragged",
+      "row": 9,
+      "frames": 6,
+      "delay": 115
+    },
+    {
+      "id": "drop",
+      "label": "Dropped",
+      "row": 10,
+      "frames": 4,
+      "delay": 150
+    },
+    {
+      "id": "click",
+      "label": "Click reaction",
+      "row": 11,
+      "frames": 4,
+      "delay": 150
+    },
+    {
+      "id": "fall",
+      "label": "Fall",
+      "row": 12,
+      "frames": 6,
+      "delay": 120
+    },
+    {
+      "id": "angry",
+      "label": "Angry",
+      "row": 13,
+      "frames": 6,
+      "delay": 150
+    },
+    {
+      "id": "trash",
+      "label": "Trash cleanup",
+      "row": 14,
+      "frames": 4,
+      "delay": 145
+    },
+    {
+      "id": "sleep",
+      "label": "Sleep",
+      "row": 15,
+      "frames": 6,
+      "delay": 220
+    },
+    {
+      "id": "appear",
+      "label": "Appear",
+      "row": 16,
+      "frames": 5,
+      "delay": 125
+    },
+    {
+      "id": "disappear",
+      "label": "Disappear",
+      "row": 17,
+      "frames": 5,
+      "delay": 115
+    },
+    {
+      "id": "typing",
+      "label": "Typing",
+      "row": 18,
+      "frames": 6,
+      "delay": 115
+    },
+    {
+      "id": "hover-curious",
+      "label": "Hover curious start",
+      "row": 19,
+      "frames": 4,
+      "delay": 105
+    },
+    {
+      "id": "hover-curious-loop",
+      "label": "Hover curious loop",
+      "row": 20,
+      "frames": 6,
+      "delay": 170
+    },
+    {
+      "id": "petting",
+      "label": "Petting start",
+      "row": 21,
+      "frames": 4,
+      "delay": 105
+    },
+    {
+      "id": "petting-loop",
+      "label": "Petting loop",
+      "row": 22,
+      "frames": 6,
+      "delay": 150
+    },
+    {
+      "id": "dizzy",
+      "label": "Dizzy start",
+      "row": 23,
+      "frames": 4,
+      "delay": 105
+    },
+    {
+      "id": "dizzy-loop",
+      "label": "Dizzy loop",
+      "row": 24,
+      "frames": 6,
+      "delay": 125
+    },
+    {
+      "id": "celebrate",
+      "label": "Celebrate start",
+      "row": 25,
+      "frames": 4,
+      "delay": 105
+    },
+    {
+      "id": "celebrate-loop",
+      "label": "Celebrate loop",
+      "row": 26,
+      "frames": 6,
+      "delay": 130
+    },
+    {
+      "id": "failed-sad",
+      "label": "Failed sad start",
+      "row": 27,
+      "frames": 4,
+      "delay": 130
+    },
+    {
+      "id": "failed-sad-loop",
+      "label": "Failed sad loop",
+      "row": 28,
+      "frames": 6,
+      "delay": 210
+    },
+    {
+      "id": "failed-sad-recover",
+      "label": "Failed sad recover",
+      "row": 29,
+      "frames": 4,
+      "delay": 125
+    },
+    {
+      "id": "dance-bounce",
+      "label": "Dance bounce",
+      "row": 30,
+      "frames": 6,
+      "delay": 115
+    },
+    {
+      "id": "dance-spin",
+      "label": "Dance spin",
+      "row": 31,
+      "frames": 6,
+      "delay": 115
+    },
+    {
+      "id": "dance-sway",
+      "label": "Dance sway",
+      "row": 32,
+      "frames": 6,
+      "delay": 115
+    },
+    {
+      "id": "dance-shuffle",
+      "label": "Dance shuffle",
+      "row": 33,
+      "frames": 6,
+      "delay": 115
+    },
+    {
+      "id": "dance-wiggle",
+      "label": "Dance wiggle",
+      "row": 34,
+      "frames": 6,
+      "delay": 115
+    },
+    {
+      "id": "move-left",
+      "label": "Move left",
+      "row": 35,
+      "frames": 6,
+      "delay": 105
+    },
+    {
+      "id": "move-right",
+      "label": "Move right",
+      "row": 36,
+      "frames": 6,
+      "delay": 105
+    },
+    {
+      "id": "move-up",
+      "label": "Move up",
+      "row": 37,
+      "frames": 6,
+      "delay": 105
+    },
+    {
+      "id": "move-down",
+      "label": "Move down",
+      "row": 38,
+      "frames": 6,
+      "delay": 105
+    },
+    {
+      "id": "move-hop",
+      "label": "Move hop",
+      "row": 39,
+      "frames": 6,
+      "delay": 105
+    }
+  ]
+}
