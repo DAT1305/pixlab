@@ -100,6 +100,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -107,8 +110,24 @@ jobs:
           path: release-artifacts
           merge-multiple: true
 
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          NOTES_FILE=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            cp "$NOTES_FILE" release-notes.md
+          else
+            {
+              echo "## PixLab Desktop ${GITHUB_REF_NAME}"
+              echo
+              echo "This release includes the latest desktop app build and installers."
+              echo
+              echo "**Full changelog:** https://github.com/DAT1305/pixlab/compare/${GITHUB_REF_NAME}^...${GITHUB_REF_NAME}"
+            } > release-notes.md
+          fi
+
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
           files: release-artifacts/**/*
-          generate_release_notes: true
+          body_path: release-notes.md
