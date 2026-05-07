@@ -1,6 +1,6 @@
 {
   "name": "pixlab-desktop",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A local-first desktop studio for pixel art conversion, sprite cleanup, and GIF export.",
   "license": "MIT",
   "author": "Nguyen",

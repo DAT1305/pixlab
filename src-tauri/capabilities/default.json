@@ -4,6 +4,7 @@
   "description": "Default capability set for the local PixLab desktop shell.",
   "windows": ["main", "pet-overlay"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "deep-link:default"
   ]
 }

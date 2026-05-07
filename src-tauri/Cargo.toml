@@ -1,6 +1,6 @@
 [package]
 name = "pixlab_desktop"
-version = "0.1.4"
+version = "0.1.5"
 description = "Local-only desktop app for PixLab"
 authors = ["Nguyen"]
 license = "MIT"
@@ -22,6 +22,8 @@ sha2 = "0.10"
 tiny_http = "0.12"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 urlencoding = "2.1"
+tauri-plugin-deep-link = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 [features]
 default = ["custom-protocol"]

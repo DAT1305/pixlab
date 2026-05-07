@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_deep_link::DeepLinkExt;
 use time::{format_description::well_known::Rfc3339, Duration as TimeDuration, OffsetDateTime};
 use tiny_http::{Response, Server, StatusCode};
 
@@ -2328,8 +2329,21 @@ fn read_macos_cursor_position() -> Option<MacPoint> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .manage(CodexState::default())
         .setup(|app| {
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
+            {
+                if let Err(error) = app.deep_link().register_all() {
+                    eprintln!("Failed to register PixLab deep link protocol: {error}");
+                }
+            }
             #[cfg(target_os = "windows")]
             {
                 start_recycle_bin_watcher(app.handle().clone());
