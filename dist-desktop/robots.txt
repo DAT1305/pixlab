@@ -2,3 +2,4 @@ User-agent: *
 Allow: /
 
 Sitemap: https://mafiler.com/sitemap.xml
+Sitemap: https://pet.mafiler.com/sitemap.xml

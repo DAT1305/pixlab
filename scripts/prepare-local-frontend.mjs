@@ -23,6 +23,24 @@ function stripRemoteHeadTags(html) {
     .replace(/<meta property="og:type" content="website" \/>/g, '<meta property="og:type" content="product" />');
 }
 
+function stripWebOnlyCss(css) {
+  let next = css;
+
+  const marketplaceStart = next.indexOf(':root{--bg-primary:#f5f6f8');
+  const imageSvgStart = marketplaceStart >= 0 ? next.indexOf('.image-svg-card{', marketplaceStart) : -1;
+  if (marketplaceStart >= 0 && imageSvgStart > marketplaceStart) {
+    next = next.slice(0, marketplaceStart) + next.slice(imageSvgStart);
+  }
+
+  const mobileWebStart = next.indexOf('@media (width<=920px){.intro-screen{overflow-x:hidden');
+  const desktopRuntimeStart = mobileWebStart >= 0 ? next.indexOf('html.pixlab-desktop-runtime{', mobileWebStart) : -1;
+  if (mobileWebStart >= 0 && desktopRuntimeStart > mobileWebStart) {
+    next = next.slice(0, mobileWebStart) + next.slice(desktopRuntimeStart);
+  }
+
+  return next;
+}
+
 async function patchHtmlFiles(rootDir) {
   const queue = [rootDir];
   while (queue.length > 0) {
@@ -37,6 +55,24 @@ async function patchHtmlFiles(rootDir) {
       if (!entry.name.endsWith('.html')) continue;
       const html = await readFile(nextPath, 'utf8');
       await writeFile(nextPath, stripRemoteHeadTags(html), 'utf8');
+    }
+  }
+}
+
+async function patchCssFiles(rootDir) {
+  const queue = [rootDir];
+  while (queue.length > 0) {
+    const current = queue.pop();
+    const entries = await (await import('node:fs/promises')).readdir(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const nextPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        queue.push(nextPath);
+        continue;
+      }
+      if (!entry.name.endsWith('.css')) continue;
+      const css = await readFile(nextPath, 'utf8');
+      await writeFile(nextPath, stripWebOnlyCss(css), 'utf8');
     }
   }
 }
@@ -83,3 +119,4 @@ await mkdir(targetDist, { recursive: true });
 await cp(sourceDist, targetDist, { recursive: true, force: true });
 await copyDesktopPetGallery();
 await patchHtmlFiles(targetDist);
+await patchCssFiles(targetDist);
